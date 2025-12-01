@@ -888,10 +888,108 @@ namespace Jellyfin.Server.Implementations.Users
 
         private async Task UpdateUserInternalAsync(JellyfinDbContext dbContext, User user)
         {
-            dbContext.Users.Attach(user);
-            dbContext.Entry(user).State = EntityState.Modified;
-            _users[user.Id] = user;
-            await dbContext.SaveChangesAsync().ConfigureAwait(false);
+            const int maxRetries = 3;
+
+            for (int attempt = 0; attempt < maxRetries; attempt++)
+            {
+                try
+                {
+                    // Reload fresh entity from database to get current RowVersion
+                    var freshUser = await dbContext.Users
+                        .Include(u => u.Permissions)
+                        .Include(u => u.Preferences)
+                        .Include(u => u.AccessSchedules)
+                        .Include(u => u.ProfileImage)
+                        .FirstOrDefaultAsync(u => u.Id == user.Id)
+                        .ConfigureAwait(false);
+
+                    if (freshUser == null)
+                    {
+                        throw new InvalidOperationException($"User with ID {user.Id} not found in database");
+                    }
+
+                    // Copy all modifiable properties from cached user to fresh user
+                    // This preserves changes made to the cached entity
+                    CopyUserProperties(user, freshUser);
+
+                    // Update using fresh entity with current RowVersion
+                    dbContext.Users.Update(freshUser);
+
+                    // Save changes
+                    await dbContext.SaveChangesAsync().ConfigureAwait(false);
+
+                    // Update cache with fresh entity
+                    _users[user.Id] = freshUser;
+
+                    return; // Success
+                }
+                catch (DbUpdateConcurrencyException ex)
+                {
+                    if (attempt == maxRetries - 1)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "Failed to update user {UserId} after {Attempts} attempts due to concurrency conflicts",
+                            user.Id,
+                            maxRetries);
+                        throw;
+                    }
+
+                    _logger.LogWarning(
+                        "Concurrency conflict updating user {UserId}, attempt {Attempt}/{MaxAttempts}, retrying...",
+                        user.Id,
+                        attempt + 1,
+                        maxRetries);
+
+                    // Brief delay before retry with exponential backoff
+                    await Task.Delay(50 * (attempt + 1)).ConfigureAwait(false);
+
+                    // Detach any tracked entities to ensure clean retry
+                    foreach (var entry in dbContext.ChangeTracker.Entries<User>())
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+                }
+            }
+        }
+
+        private static void CopyUserProperties(User source, User target)
+        {
+            // Copy all user properties that might have been modified
+            target.Username = source.Username;
+            target.Password = source.Password;
+            target.EasyPassword = source.EasyPassword;
+            target.Salt = source.Salt;
+            target.MustUpdatePassword = source.MustUpdatePassword;
+            target.AudioLanguagePreference = source.AudioLanguagePreference;
+            target.AuthenticationProviderId = source.AuthenticationProviderId;
+            target.PasswordResetProviderId = source.PasswordResetProviderId;
+            target.InvalidLoginAttemptCount = source.InvalidLoginAttemptCount;
+            target.LoginAttemptsBeforeLockout = source.LoginAttemptsBeforeLockout;
+            target.MaxActiveSessions = source.MaxActiveSessions;
+            target.LastActivityDate = source.LastActivityDate;
+            target.LastLoginDate = source.LastLoginDate;
+            target.SubtitleMode = source.SubtitleMode;
+            target.PlayDefaultAudioTrack = source.PlayDefaultAudioTrack;
+            target.SubtitleLanguagePreference = source.SubtitleLanguagePreference;
+            target.DisplayMissingEpisodes = source.DisplayMissingEpisodes;
+            target.DisplayCollectionsView = source.DisplayCollectionsView;
+            target.HidePlayedInLatest = source.HidePlayedInLatest;
+            target.RememberAudioSelections = source.RememberAudioSelections;
+            target.RememberSubtitleSelections = source.RememberSubtitleSelections;
+            target.EnableNextEpisodeAutoPlay = source.EnableNextEpisodeAutoPlay;
+            target.EnableAutoLogin = source.EnableAutoLogin;
+            target.EnableLocalPassword = source.EnableLocalPassword;
+            target.EnableUserPreferenceAccess = source.EnableUserPreferenceAccess;
+            target.MaxParentalRatingScore = source.MaxParentalRatingScore;
+            target.MaxParentalRatingSubScore = source.MaxParentalRatingSubScore;
+            target.RemoteClientBitrateLimit = source.RemoteClientBitrateLimit;
+            target.InternalId = source.InternalId;
+            target.SyncPlayAccess = source.SyncPlayAccess;
+            target.CastReceiverId = source.CastReceiverId;
+
+            // Copy collections if they were modified
+            // Note: EF Core will track changes to these collections automatically
         }
     }
 }
