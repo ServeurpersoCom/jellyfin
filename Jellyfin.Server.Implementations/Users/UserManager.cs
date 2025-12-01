@@ -888,7 +888,7 @@ namespace Jellyfin.Server.Implementations.Users
 
         private async Task UpdateUserInternalAsync(JellyfinDbContext dbContext, User user)
         {
-            const int maxRetries = 3;
+            const int maxRetries = 10;
 
             for (int attempt = 0; attempt < maxRetries; attempt++)
             {
@@ -941,8 +941,9 @@ namespace Jellyfin.Server.Implementations.Users
                         attempt + 1,
                         maxRetries);
 
-                    // Brief delay before retry with exponential backoff
-                    await Task.Delay(50 * (attempt + 1)).ConfigureAwait(false);
+                    // Exponential backoff plus random jitter to reduce contention
+                    var jitter = Random.Shared.Next(0, 50);
+                    await Task.Delay((50 * (attempt + 1)) + jitter).ConfigureAwait(false);
 
                     // Detach any tracked entities to ensure clean retry
                     foreach (var entry in dbContext.ChangeTracker.Entries<User>())
@@ -958,8 +959,6 @@ namespace Jellyfin.Server.Implementations.Users
             // Copy all user properties that might have been modified
             target.Username = source.Username;
             target.Password = source.Password;
-            target.EasyPassword = source.EasyPassword;
-            target.Salt = source.Salt;
             target.MustUpdatePassword = source.MustUpdatePassword;
             target.AudioLanguagePreference = source.AudioLanguagePreference;
             target.AuthenticationProviderId = source.AuthenticationProviderId;
