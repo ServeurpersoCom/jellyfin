@@ -53,6 +53,11 @@ namespace Emby.Server.Implementations.Library
 
             ArgumentNullException.ThrowIfNull(item);
 
+            if (IsReadOnlyUser(user))
+            {
+                return;
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
 
             var keys = item.GetUserDataKeys();
@@ -98,6 +103,11 @@ namespace Emby.Server.Implementations.Library
             ArgumentNullException.ThrowIfNull(user);
             ArgumentNullException.ThrowIfNull(item);
             ArgumentNullException.ThrowIfNull(userDataDto);
+
+            if (IsReadOnlyUser(user))
+            {
+                return;
+            }
 
             var userData = GetUserData(user, item) ?? throw new InvalidOperationException("UserData should not be null.");
 
@@ -286,6 +296,13 @@ namespace Emby.Server.Implementations.Library
                 ItemId = itemId,
                 Key = data.Key
             };
+        }
+
+        private static bool IsReadOnlyUser(User user)
+        {
+            ArgumentNullException.ThrowIfNull(user);
+
+            return string.Equals(user.Username, "famille", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <inheritdoc />
