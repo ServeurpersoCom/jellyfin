@@ -961,6 +961,12 @@ namespace Jellyfin.Server.Implementations.Users
 
         private async Task UpdateUserInternalAsync(JellyfinDbContext dbContext, User user)
         {
+            // blocks all user row writes for the read only account, including last activity
+            if (string.Equals(user.Username, "famille", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             dbContext.Users.Attach(user);
             dbContext.Entry(user).State = EntityState.Modified;
             await dbContext.SaveChangesAsync().ConfigureAwait(false);

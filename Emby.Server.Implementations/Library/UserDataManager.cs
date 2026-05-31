@@ -26,6 +26,9 @@ namespace Emby.Server.Implementations.Library
     public class UserDataManager : IUserDataManager
     {
         private readonly IServerConfigurationManager _config;
+
+        // read only account name, all its writes are dropped
+        private const string ReadOnlyUsername = "famille";
         private readonly IDbContextFactory<JellyfinDbContext> _repository;
         private readonly FastConcurrentLru<string, UserItemData> _cache;
 
@@ -46,9 +49,21 @@ namespace Emby.Server.Implementations.Library
         /// <inheritdoc />
         public event EventHandler<UserDataSaveEventArgs>? UserDataSaved;
 
+        // true when the user is the read only account
+        private static bool IsReadOnlyUser(User user)
+        {
+            return string.Equals(user.Username, ReadOnlyUsername, StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <inheritdoc />
         public void SaveUserData(User user, BaseItem item, UserItemData userData, UserDataSaveReason reason, CancellationToken cancellationToken)
         {
+            // blocks playback position, played state and favorites writes for the read only account
+            if (IsReadOnlyUser(user))
+            {
+                return;
+            }
+
             ArgumentNullException.ThrowIfNull(userData);
 
             ArgumentNullException.ThrowIfNull(item);
@@ -98,6 +113,12 @@ namespace Emby.Server.Implementations.Library
             ArgumentNullException.ThrowIfNull(user);
             ArgumentNullException.ThrowIfNull(item);
             ArgumentNullException.ThrowIfNull(userDataDto);
+
+            // blocks user item data writes for the read only account
+            if (IsReadOnlyUser(user))
+            {
+                return;
+            }
 
             var userData = GetUserData(user, item) ?? throw new InvalidOperationException("UserData should not be null.");
 

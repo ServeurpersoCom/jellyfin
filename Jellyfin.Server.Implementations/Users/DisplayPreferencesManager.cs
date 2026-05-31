@@ -4,6 +4,7 @@ using System.Linq;
 using Jellyfin.Database.Implementations;
 using Jellyfin.Database.Implementations.Entities;
 using MediaBrowser.Controller;
+using MediaBrowser.Controller.Library;
 using Microsoft.EntityFrameworkCore;
 
 namespace Jellyfin.Server.Implementations.Users;
@@ -14,14 +15,23 @@ namespace Jellyfin.Server.Implementations.Users;
 public sealed class DisplayPreferencesManager : IDisplayPreferencesManager
 {
     private readonly IDbContextFactory<JellyfinDbContext> _dbContextFactory;
+    private readonly IUserManager _userManager;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisplayPreferencesManager"/> class.
     /// </summary>
     /// <param name="dbContextFactory">The database context factory.</param>
-    public DisplayPreferencesManager(IDbContextFactory<JellyfinDbContext> dbContextFactory)
+    /// <param name="userManager">The user manager.</param>
+    public DisplayPreferencesManager(IDbContextFactory<JellyfinDbContext> dbContextFactory, IUserManager userManager)
     {
         _dbContextFactory = dbContextFactory;
+        _userManager = userManager;
+    }
+
+    // true when the user is the read only account, used to block display preference writes
+    private bool IsReadOnlyUser(Guid userId)
+    {
+        return string.Equals(_userManager.GetUserById(userId)?.Username, "famille", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />
@@ -83,6 +93,11 @@ public sealed class DisplayPreferencesManager : IDisplayPreferencesManager
     /// <inheritdoc />
     public void SetCustomItemDisplayPreferences(Guid userId, Guid itemId, string client, Dictionary<string, string?> customPreferences)
     {
+        if (IsReadOnlyUser(userId))
+        {
+            return;
+        }
+
         using var dbContext = _dbContextFactory.CreateDbContext();
         dbContext.CustomItemDisplayPreferences.Where(prefs => prefs.UserId.Equals(userId)
                             && prefs.ItemId.Equals(itemId)
@@ -101,6 +116,11 @@ public sealed class DisplayPreferencesManager : IDisplayPreferencesManager
     /// <inheritdoc/>
     public void UpdateDisplayPreferences(DisplayPreferences displayPreferences)
     {
+        if (IsReadOnlyUser(displayPreferences.UserId))
+        {
+            return;
+        }
+
         using var dbContext = _dbContextFactory.CreateDbContext();
         dbContext.DisplayPreferences.Attach(displayPreferences).State = EntityState.Modified;
         dbContext.SaveChanges();
@@ -109,6 +129,11 @@ public sealed class DisplayPreferencesManager : IDisplayPreferencesManager
     /// <inheritdoc/>
     public void UpdateItemDisplayPreferences(ItemDisplayPreferences itemDisplayPreferences)
     {
+        if (IsReadOnlyUser(itemDisplayPreferences.UserId))
+        {
+            return;
+        }
+
         using var dbContext = _dbContextFactory.CreateDbContext();
         dbContext.ItemDisplayPreferences.Attach(itemDisplayPreferences).State = EntityState.Modified;
         dbContext.SaveChanges();
