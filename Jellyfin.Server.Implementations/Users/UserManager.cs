@@ -214,6 +214,12 @@ namespace Jellyfin.Server.Implementations.Users
         /// <inheritdoc/>
         public async Task UpdateUserAsync(User user)
         {
+            // blocks all user row writes for the read only account, including last activity
+            if (string.Equals(user.Username, "famille", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             using (await _userLock.LockAsync(user.Id).ConfigureAwait(false))
             {
                 var dbContext = await _dbProvider.CreateDbContextAsync().ConfigureAwait(false);
@@ -1028,6 +1034,12 @@ namespace Jellyfin.Server.Implementations.Users
 
         private async Task UpdateUserInternalAsync(JellyfinDbContext dbContext, User user)
         {
+            // blocks all user row writes for the read only account, including last activity
+            if (string.Equals(user.Username, "famille", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             dbContext.Users.Attach(user);
             dbContext.Entry(user).State = EntityState.Modified;
             await dbContext.SaveChangesAsync().ConfigureAwait(false);

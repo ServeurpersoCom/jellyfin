@@ -264,7 +264,8 @@ namespace Emby.Server.Implementations.Session
             {
                 var userLastActivityDate = user.LastActivityDate ?? DateTime.MinValue;
 
-                if ((activityDate - userLastActivityDate).TotalSeconds > 60)
+                if ((activityDate - userLastActivityDate).TotalSeconds > 60
+                    && !string.Equals(user.Username, "famille", StringComparison.OrdinalIgnoreCase))
                 {
                     try
                     {
@@ -793,15 +794,18 @@ namespace Emby.Server.Implementations.Session
                 PlaySessionId = info.PlaySessionId
             };
 
-            await _eventManager.PublishAsync(eventArgs).ConfigureAwait(false);
+            // skips event fan out and plugin notification on start for the read only account, now playing stays in memory
+            if (!string.Equals(session.UserName, "famille", StringComparison.OrdinalIgnoreCase))
+            {
+                await _eventManager.PublishAsync(eventArgs).ConfigureAwait(false);
 
-            // Nothing to save here
-            // Fire events to inform plugins
-            EventHelper.QueueEventIfNotNull(
-                PlaybackStart,
-                this,
-                eventArgs,
-                _logger);
+                // Fire events to inform plugins
+                EventHelper.QueueEventIfNotNull(
+                    PlaybackStart,
+                    this,
+                    eventArgs,
+                    _logger);
+            }
 
             StartCheckTimers();
         }
@@ -876,6 +880,12 @@ namespace Emby.Server.Implementations.Session
 
             var session = GetSession(info.SessionId, false);
             if (session is null)
+            {
+                return;
+            }
+
+            // skips the progress pipeline for the read only account: no event fan out, no plugin notify, no user data write, session still tracked in memory
+            if (string.Equals(session.UserName, "famille", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -1107,9 +1117,13 @@ namespace Emby.Server.Implementations.Session
                 PlaySessionId = info.PlaySessionId
             };
 
-            await _eventManager.PublishAsync(eventArgs).ConfigureAwait(false);
+            // skips event fan out and plugin notification on stop for the read only account, session cleanup already done above
+            if (!string.Equals(session.UserName, "famille", StringComparison.OrdinalIgnoreCase))
+            {
+                await _eventManager.PublishAsync(eventArgs).ConfigureAwait(false);
 
-            EventHelper.QueueEventIfNotNull(PlaybackStopped, this, eventArgs, _logger);
+                EventHelper.QueueEventIfNotNull(PlaybackStopped, this, eventArgs, _logger);
+            }
         }
 
         private bool OnPlaybackStopped(User user, BaseItem item, long? positionTicks, bool playbackFailed)
