@@ -59,6 +59,12 @@ namespace Emby.Server.Implementations.Playlists
             _appConfig = appConfig;
         }
 
+        // true when the user is the read only account, used to block playlist writes
+        private bool IsReadOnlyUser(Guid userId)
+        {
+            return string.Equals(_userManager.GetUserById(userId)?.Username, "famille", StringComparison.OrdinalIgnoreCase);
+        }
+
         public Playlist GetPlaylistForUser(Guid playlistId, Guid userId)
         {
             return GetPlaylists(userId).Where(p => p.Id.Equals(playlistId)).FirstOrDefault();
@@ -79,6 +85,11 @@ namespace Emby.Server.Implementations.Playlists
 
         public async Task<PlaylistCreationResult> CreatePlaylist(PlaylistCreationRequest request)
         {
+            if (IsReadOnlyUser(request.UserId))
+            {
+                return new PlaylistCreationResult(string.Empty);
+            }
+
             var name = request.Name;
             var folderName = _fileSystem.GetValidFilename(name);
             var parentFolder = GetPlaylistsFolder(request.UserId);
@@ -200,6 +211,11 @@ namespace Emby.Server.Implementations.Playlists
 
         public Task AddItemToPlaylistAsync(Guid playlistId, IReadOnlyCollection<Guid> itemIds, int? position, Guid userId)
         {
+            if (IsReadOnlyUser(userId))
+            {
+                return Task.CompletedTask;
+            }
+
             var user = userId.IsEmpty() ? null : _userManager.GetUserById(userId);
 
             return AddToPlaylistInternal(
@@ -280,6 +296,11 @@ namespace Emby.Server.Implementations.Playlists
                 throw new ArgumentException("No Playlist exists with the supplied Id");
             }
 
+            if (IsReadOnlyUser(playlist.OwnerUserId))
+            {
+                return;
+            }
+
             var children = playlist.GetManageableItems().ToList();
 
             var idList = entryIds.ToList();
@@ -313,6 +334,11 @@ namespace Emby.Server.Implementations.Playlists
 
         public async Task MoveItemAsync(string playlistId, string entryId, int newIndex, Guid callingUserId)
         {
+            if (IsReadOnlyUser(callingUserId))
+            {
+                return;
+            }
+
             if (_libraryManager.GetItemById(playlistId) is not Playlist playlist)
             {
                 throw new ArgumentException("No Playlist exists with the supplied Id");
@@ -603,6 +629,11 @@ namespace Emby.Server.Implementations.Playlists
 
         public async Task UpdatePlaylist(PlaylistUpdateRequest request)
         {
+            if (IsReadOnlyUser(request.UserId))
+            {
+                return;
+            }
+
             var playlist = GetPlaylistForUser(request.Id, request.UserId);
 
             if (request.Ids is not null)
