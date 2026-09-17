@@ -185,7 +185,9 @@ namespace Jellyfin.Server.Implementations.Security
 
                     authInfo.User = _userManager.GetUserById(device.UserId);
 
-                    if (updateToken)
+                    // skips the device last activity write for the read only account
+                    if (updateToken
+                        && !string.Equals(authInfo.User?.Username, "famille", StringComparison.OrdinalIgnoreCase))
                     {
                         await _deviceManager.UpdateDevice(device).ConfigureAwait(false);
                     }
